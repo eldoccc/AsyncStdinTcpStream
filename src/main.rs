@@ -65,10 +65,8 @@ async fn network_write(mut stream: OwnedWriteHalf, mut rx_process: Receiver<Stri
     //read from process and send to network
     loop {
         let response = rx_process.recv().await.unwrap();
-
         println!("final message: {}\n", response);
-        let _ = stream.write_all("message received".as_bytes());
-        let _ = stream.flush();
+        let _ = stream.write_all("message received".as_bytes()).await;
     }
 }
 async fn process_message(mut rx_mpsc: Receiver<String>, tx_process: Sender<String>) {
