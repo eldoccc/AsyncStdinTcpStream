@@ -114,8 +114,6 @@ async fn network_write(
     mut rx_process: Receiver<String>,
     mut reader: Receiver<bool>,
 ) -> Receiver<String> {
-    //read from process and send to network
-
     loop {
         //check if stream has been closed an breaks out of the loop if this is the case
         tokio::select! {
