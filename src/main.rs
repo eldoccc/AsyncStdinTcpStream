@@ -6,6 +6,10 @@ use tokio::net::TcpListener;
 use tokio::spawn;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::oneshot;
+use tokio::sync::oneshot::{Receiver as OReceiver, Sender as OSender};
+
+// client : nc localhost 8000
 
 #[tokio::main]
 async fn main() {
@@ -35,7 +39,7 @@ async fn main() {
     process_manager.await.unwrap();
 }
 
-//net_listen
+//wait for a tcp connexion and spawn 2 tasks : one for reading from the client and one for writing to the client
 async fn handle_connexion(
     listener: TcpListener,
     mut tx_mpsc_network: Sender<String>,
@@ -45,7 +49,7 @@ async fn handle_connexion(
         let (stream, _) = listener.accept().await.expect("accept panic");
         println!("Connection established");
         let (reading_part, writing_part) = stream.into_split();
-        let (channel_com_w, channel_com_r) = mpsc::channel::<bool>(32);
+        let (channel_com_w, channel_com_r) = oneshot::channel::<()>();
 
         let res = tokio::join!(
             network_listen(reading_part, tx_mpsc_network, channel_com_w),
@@ -59,7 +63,7 @@ async fn handle_connexion(
 async fn network_listen(
     mut stream: OwnedReadHalf,
     tx_mpsc: Sender<String>,
-    writer: Sender<bool>,
+    channel_com_w: OSender<()>,
 ) -> Sender<String> {
     //read from network and send to process
 
@@ -67,7 +71,8 @@ async fn network_listen(
         let mut buf = [0; 1024];
         let _ = match stream.read(&mut buf).await {
             Ok(0) => {
-                writer.send(true).await.unwrap();
+                //sending any type of value is possible: the goal is just to close the channel
+                channel_com_w.send(()).unwrap();
                 println!("Connection closed");
                 break;
             }
@@ -112,15 +117,13 @@ async fn process_message(mut rx_mpsc: Receiver<String>, tx_process: Sender<Strin
 async fn network_write(
     mut stream: OwnedWriteHalf,
     mut rx_process: Receiver<String>,
-    mut reader: Receiver<bool>,
+    mut channel_com_r: OReceiver<()>,
 ) -> Receiver<String> {
     loop {
         //check if stream has been closed an breaks out of the loop if this is the case
         tokio::select! {
-            val_exit = reader.recv() => {
-                if val_exit.unwrap() == true {
-                    break;
-                }
+            _ =  &mut channel_com_r => {
+                break;
             }
             val_response = rx_process.recv() => {
                 println!("message received: {}", val_response.unwrap());
